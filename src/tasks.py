@@ -17,37 +17,70 @@ def load_data(red_path: str, white_path: str) -> pd.DataFrame:
 
     Note: Don't forget to add the 'type' attribute.
     """
-    # TODO: Your code here
-    data = None
+    red = pd.read_csv(red_path, sep=';')
+    white = pd.read_csv(white_path, sep=';')
+    red['type'] = 'red'
+    white['type'] = 'white'
+    data = pd.concat([red, white], ignore_index=True)
+    if data.empty:
+        raise ValueError("The loaded wine dataset is empty")
 
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    data[numeric_columns] = data[numeric_columns].fillna(
+        data[numeric_columns].median()
+    )
+    data['type'] = data['type'].fillna('unknown')
     return data
 
 
 def remove_outliers(df: pd.DataFrame, features: pd.Index) -> pd.DataFrame:
     """Removing outliers from a dataset using the IQR method."""
     df_clean = df.copy()
+    if isinstance(features, pd.DataFrame):
+        feature_names = list(features.columns)
+    else:
+        feature_names = list(features)
 
-    # TODO: Your code here
-
+    for feature in feature_names:
+        if feature not in df_clean.columns:
+            continue
+        if not pd.api.types.is_numeric_dtype(df_clean[feature]):
+            continue
+        q1 = df_clean[feature].quantile(0.25)
+        q3 = df_clean[feature].quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        df_clean = df_clean[
+            (df_clean[feature] >= lower_bound)
+            & (df_clean[feature] <= upper_bound)
+        ]
     return df_clean
 
 
 def encode_categorical_variables(data: pd.DataFrame) -> pd.DataFrame:
     """Encoding of categorical variables."""
     data_encoded = data.copy()
-
-    # TODO: Your code here
-
+    if 'type' in data_encoded.columns:
+        data_encoded = pd.get_dummies(
+            data_encoded,
+            columns=['type'],
+            prefix='type',
+            dtype=int
+        )
     return data_encoded
 
 
 def scale_features(
-    X_train: pd.DataFrame
-) -> np.ndarray:
+    X_train: pd.DataFrame,
+    X_test: pd.DataFrame | np.ndarray | None = None
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """Standartization (scaling) of features"""
-    # TODO: Your code here
-    X_train_scaled = None
-
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    if X_test is not None:
+        X_test_scaled = scaler.transform(X_test)
+        return X_train_scaled, X_test_scaled
     return X_train_scaled
 
 
@@ -56,22 +89,37 @@ def apply_pca(X: pd.DataFrame) -> np.ndarray:
     Application of the principal component analysis (PCA) method.
     """
     X_scaled = scale_features(X)
-
-    # TODO: Your code here
-
-    X_pca = None
+    pca = PCA(n_components=2, random_state=42)
+    X_pca = pca.fit_transform(X_scaled)
     return X_pca
 
 
 def perform_clustering(X_pca: np.ndarray) -> dict[str, float | np.ndarray]:
     """Performing clustering based on PCA results."""
-    # K-means
-    # TODO: Your code here
+    X_pca = np.asarray(X_pca)
+    if X_pca.shape[0] < 2:
+        raise ValueError("At least 2 samples are required for clustering")
 
-    # Model evaluation
-    # TODO: Your code here
-    results = {'labels': [], 'silhouette_score': 0.0}
+    best_score = -1.0
+    best_labels = np.array([], dtype=int)
+    for n_clusters in range(2, 11):
+        if n_clusters >= X_pca.shape[0]:
+            break
+        model = KMeans(
+            n_clusters=n_clusters,
+            random_state=42,
+            n_init=10
+        )
+        labels = model.fit_predict(X_pca)
+        score = silhouette_score(X_pca, labels)
+        if score > best_score:
+            best_score = score
+            best_labels = labels
 
+    results = {
+        'labels': best_labels,
+        'silhouette_score': float(best_score)
+    }
     return results
 
 
